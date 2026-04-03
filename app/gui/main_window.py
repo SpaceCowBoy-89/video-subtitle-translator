@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 
 from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStatusBar,
@@ -27,7 +31,6 @@ from app.gui.file_list_widget import FileListWidget
 from app.gui.language_selector import LanguageSelector
 from app.gui.progress_panel import ProgressPanel
 from app.gui.settings_dialog import SettingsDialog
-from app.gui.theme import STYLESHEET
 from app.workers.batch_worker import BatchWorker
 
 
@@ -37,12 +40,11 @@ class MainWindow(QMainWindow):
         self._config = Config()
         self._worker = None
         self._thread = None
-        self._ffmpeg_available = shutil.which("ffmpeg") is not None
+        self._ffmpeg_available = self._find_ffmpeg()
 
         self.setWindowTitle("Subtitle Translator")
-        self.resize(960, 680)
-        self.setMinimumSize(760, 540)
-        self.setStyleSheet(STYLESHEET)
+        self.resize(980, 680)
+        self.setMinimumSize(780, 540)
 
         self._init_ui()
         self._init_menu()
@@ -50,6 +52,27 @@ class MainWindow(QMainWindow):
 
         if not self._ffmpeg_available:
             self._status("ffmpeg not found — video burning disabled", error=True)
+
+    # ── ffmpeg detection ────────────────────────────────────────────────────
+
+    def _find_ffmpeg(self) -> bool:
+        """Search PATH and common install locations for ffmpeg."""
+        if shutil.which("ffmpeg"):
+            return True
+        common = [
+            "/opt/homebrew/bin/ffmpeg",       # Apple Silicon Homebrew
+            "/usr/local/bin/ffmpeg",           # Intel Homebrew / manual install
+            "/usr/bin/ffmpeg",                 # Linux system
+            "/snap/bin/ffmpeg",                # Snap
+            os.path.expanduser("~/.local/bin/ffmpeg"),
+        ]
+        for path in common:
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                # Add its directory to PATH so ffmpeg-python and subprocesses find it
+                bin_dir = os.path.dirname(path)
+                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+                return True
+        return False
 
     # ── Menu ────────────────────────────────────────────────────────────────
 
@@ -91,7 +114,7 @@ class MainWindow(QMainWindow):
         main_pane = self._make_main_pane()
         splitter.addWidget(main_pane)
 
-        splitter.setSizes([280, 680])
+        splitter.setSizes([300, 680])
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         root_layout.addWidget(splitter, 1)
@@ -138,7 +161,7 @@ class MainWindow(QMainWindow):
 
     def _make_sidebar(self) -> QWidget:
         w = QWidget()
-        w.setFixedWidth(280)
+        w.setFixedWidth(300)
         w.setStyleSheet("background-color: #0a0e17; border-right: 1px solid #141c2e;")
         layout = QVBoxLayout(w)
         layout.setContentsMargins(18, 20, 18, 20)
@@ -377,12 +400,24 @@ class MainWindow(QMainWindow):
     def _on_finished(self, result: dict) -> None:
         self._cleanup_thread()
         completed = result.get("completed", 0)
-        self._status(f"Done — {completed} file(s) translated")
-        QMessageBox.information(self, "Complete", f"{completed} file(s) translated successfully.")
+        failed = result.get("failed", 0)
+        results = result.get("results", [])
+
+        if completed == 0 and failed > 0:
+            # All jobs failed — show the first error prominently
+            first_error = next((r["error"] for r in results if not r["success"]), "Unknown error")
+            self._status(f"Failed — {first_error}", error=True)
+            QMessageBox.critical(self, "Translation Failed", f"{failed} file(s) failed.\n\n{first_error}")
+            return
+
+        self._status(f"Done — {completed} file(s) translated" + (f", {failed} failed" if failed else ""))
+        _ResultsDialog(results, self).exec()
 
     def _on_error(self, error_msg: str) -> None:
+        self._cleanup_thread()
         self.progress_panel.set_status(f"Error: {error_msg}")
         self._status(f"Error: {error_msg}", error=True)
+        QMessageBox.critical(self, "Error", error_msg)
 
     def _cleanup_thread(self) -> None:
         if self._thread:
@@ -412,3 +447,117 @@ def _field_label(text: str) -> QLabel:
         "color: #6b7280; font-size: 12px; font-weight: 500; background: transparent;"
     )
     return lbl
+
+
+# ── Results dialog ───────────────────────────────────────────────────────────
+
+class _ResultsDialog(QDialog):
+    """Shows per-file outcomes with output paths and a Reveal in Finder button."""
+
+    def __init__(self, results: list[dict], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Translation Complete")
+        self.setMinimumWidth(520)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self._build(results)
+
+    def _build(self, results: list[dict]) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 20)
+        root.setSpacing(0)
+
+        ok = [r for r in results if r["success"]]
+        bad = [r for r in results if not r["success"]]
+
+        # Header
+        title = QLabel(f"{len(ok)} file(s) translated" + (f", {len(bad)} failed" if bad else ""))
+        title.setStyleSheet(
+            "color: #d0d6e0; font-size: 16px; font-weight: 700; background: transparent;"
+        )
+        root.addWidget(title)
+        root.addSpacing(16)
+
+        # Scroll area for results
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setMaximumHeight(300)
+
+        inner = QWidget()
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+        inner_layout.setSpacing(8)
+
+        for r in results:
+            inner_layout.addWidget(self._make_row(r))
+
+        inner_layout.addStretch()
+        scroll.setWidget(inner)
+        root.addWidget(scroll)
+        root.addSpacing(20)
+
+        # Close button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("primaryBtn")
+        close_btn.setMinimumWidth(90)
+        close_btn.setFixedHeight(36)
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+    def _make_row(self, r: dict) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet(
+            "background-color: #0f1520; border-radius: 8px; border: 1px solid #1c2840;"
+        )
+        h = QHBoxLayout(row)
+        h.setContentsMargins(12, 10, 12, 10)
+        h.setSpacing(10)
+
+        if r["success"]:
+            dot = QLabel("●")
+            dot.setStyleSheet("color: #10b981; font-size: 10px; background: transparent;")
+            dot.setFixedWidth(14)
+            h.addWidget(dot)
+
+            out_path = r.get("subtitle_path") or r.get("video_path", "")
+            name = os.path.basename(out_path) if out_path else os.path.basename(r["input"])
+            lbl = QLabel(name)
+            lbl.setStyleSheet(
+                "color: #c0c8d8; font-size: 13px; font-weight: 600; background: transparent;"
+            )
+            h.addWidget(lbl, 1)
+
+            if out_path and os.path.exists(out_path):
+                reveal_btn = QPushButton("Reveal")
+                reveal_btn.setObjectName("iconBtn")
+                reveal_btn.setFixedWidth(64)
+                reveal_btn.setFixedHeight(28)
+                _path = out_path
+                reveal_btn.clicked.connect(lambda _, p=_path: subprocess.run(["open", "-R", p]))
+                h.addWidget(reveal_btn)
+        else:
+            dot = QLabel("●")
+            dot.setStyleSheet("color: #ef4444; font-size: 10px; background: transparent;")
+            dot.setFixedWidth(14)
+            h.addWidget(dot)
+
+            name = os.path.basename(r["input"])
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            name_lbl = QLabel(name)
+            name_lbl.setStyleSheet(
+                "color: #c0c8d8; font-size: 13px; font-weight: 600; background: transparent;"
+            )
+            col.addWidget(name_lbl)
+            err_lbl = QLabel(r["error"])
+            err_lbl.setStyleSheet(
+                "color: #7f3535; font-size: 11px; background: transparent;"
+            )
+            err_lbl.setWordWrap(True)
+            col.addWidget(err_lbl)
+            h.addLayout(col)
+
+        return row

@@ -100,6 +100,11 @@ class SubtitleTranslator:
         total = len(entries)
 
         for i, entry in enumerate(entries):
+            # Skip empty/whitespace lines — Google Translate returns None for them
+            if not entry.text.strip():
+                translated.append(entry)
+                continue
+
             translator = self._translator_class(source=source, target=target)
             translated_text = translator.translate(entry.text)
 
@@ -108,7 +113,7 @@ class SubtitleTranslator:
                     index=entry.index,
                     start=entry.start,
                     end=entry.end,
-                    text=translated_text,
+                    text=translated_text or entry.text,  # fall back to original if None
                 )
             )
 

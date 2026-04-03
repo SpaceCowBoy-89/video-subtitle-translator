@@ -3,7 +3,7 @@
 STYLESHEET = """
 /* ── Base ── */
 * {
-    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-family: "Helvetica Neue", Arial;
     font-size: 13px;
 }
 QWidget {
@@ -101,7 +101,6 @@ QComboBox {
     color: #d0d6e0;
     font-size: 13px;
     selection-background-color: transparent;
-    min-width: 170px;
 }
 QComboBox:hover {
     border-color: #344268;

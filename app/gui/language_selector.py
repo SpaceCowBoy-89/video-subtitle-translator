@@ -1,9 +1,8 @@
-"""Language selector with source → target arrow layout."""
+"""Language selector — vertically stacked source/target combos for sidebar."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
 from app.languages import DEEPL_SOURCE_LANGUAGES, DEEPL_TARGET_LANGUAGES
 
@@ -14,46 +13,38 @@ class LanguageSelector(QWidget):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(10)
 
         # Source
-        src_col = QVBoxLayout()
-        src_col.setSpacing(5)
         src_label = QLabel("SOURCE")
-        src_label.setProperty("class", "section-title")
-        src_col.addWidget(src_label)
+        src_label.setStyleSheet(
+            "color: #4b5870; font-size: 10px; font-weight: 700;"
+            "letter-spacing: 0.8px; background: transparent;"
+        )
+        layout.addWidget(src_label)
 
         self.source_combo = QComboBox()
         self.source_combo.addItems(sorted(DEEPL_SOURCE_LANGUAGES.keys()))
         self.source_combo.setCurrentText("Auto-Detect")
-        src_col.addWidget(self.source_combo)
-        layout.addLayout(src_col)
+        self.source_combo.setMinimumWidth(0)  # let it fill parent
+        layout.addWidget(self.source_combo)
 
-        # Arrow
-        arrow = QLabel("→")
-        arrow.setAlignment(Qt.AlignCenter)
-        arrow.setFixedWidth(44)
-        arrow.setStyleSheet(
-            "color: #253152; font-size: 20px; font-weight: 300;"
-            "padding-top: 18px; background: transparent;"
-        )
-        layout.addWidget(arrow)
+        layout.addSpacing(4)
 
         # Target
-        tgt_col = QVBoxLayout()
-        tgt_col.setSpacing(5)
         tgt_label = QLabel("TARGET")
-        tgt_label.setProperty("class", "section-title")
-        tgt_col.addWidget(tgt_label)
+        tgt_label.setStyleSheet(
+            "color: #4b5870; font-size: 10px; font-weight: 700;"
+            "letter-spacing: 0.8px; background: transparent;"
+        )
+        layout.addWidget(tgt_label)
 
         self.target_combo = QComboBox()
         self.target_combo.addItems(sorted(DEEPL_TARGET_LANGUAGES.keys()))
-        tgt_col.addWidget(self.target_combo)
-        layout.addLayout(tgt_col)
-
-        layout.addStretch()
+        self.target_combo.setMinimumWidth(0)
+        layout.addWidget(self.target_combo)
 
     def get_source_language(self) -> str:
         return DEEPL_SOURCE_LANGUAGES[self.source_combo.currentText()]
@@ -70,7 +61,3 @@ class LanguageSelector(QWidget):
         idx = self.target_combo.findText(display_name)
         if idx >= 0:
             self.target_combo.setCurrentIndex(idx)
-
-
-class _VBox(QWidget):
-    pass

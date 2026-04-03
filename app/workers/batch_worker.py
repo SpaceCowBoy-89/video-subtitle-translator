@@ -28,6 +28,7 @@ class BatchWorker(BaseWorker):
 
     def run(self) -> None:
         """Execute all jobs sequentially."""
+        results = []
         try:
             # Reuse Whisper model across all jobs
             transcriber = VideoTranscriber(model_size=self._whisper_model)
@@ -38,7 +39,6 @@ class BatchWorker(BaseWorker):
             )
 
             total = len(self._configs)
-            results = []
 
             for i, config in enumerate(self._configs):
                 if self._cancelled:
@@ -47,18 +47,29 @@ class BatchWorker(BaseWorker):
 
                 self.status.emit(f"Processing {i + 1}/{total}: {config.input_path}")
 
-                def job_progress(frac: float, msg: str) -> None:
-                    overall = (i + frac) / total
-                    self.progress.emit(overall)
-                    self.status.emit(f"[{i + 1}/{total}] {msg}")
+                # Fix: capture i by value via default argument to avoid closure bug
+                def job_progress(frac: float, msg: str, _i: int = i, _total: int = total) -> None:
+                    self.progress.emit((_i + frac) / _total)
+                    self.status.emit(f"[{_i + 1}/{_total}] {msg}")
 
                 result = pipeline.run(config, progress_callback=job_progress)
                 results.append(result)
 
-                if not result.success:
-                    self.error.emit(f"Job {i + 1} failed: {result.error}")
-
-            self.finished.emit({"results": results, "completed": len(results)})
-
         except Exception as e:
             self.error.emit(str(e))
+
+        # Always emit finished so the UI can clean up, even after an error
+        self.finished.emit({
+            "results": [
+                {
+                    "input": r.input_path,
+                    "subtitle_path": r.subtitle_path,
+                    "video_path": r.video_path,
+                    "success": r.success,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+            "completed": sum(1 for r in results if r.success),
+            "failed": sum(1 for r in results if not r.success),
+        })

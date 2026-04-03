@@ -39,7 +39,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._config = config
         self.setWindowTitle("Preferences")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(500)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self._init_ui()
         self._load_settings()
@@ -119,13 +119,14 @@ class SettingsDialog(QDialog):
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("iconBtn")
-        cancel_btn.setFixedWidth(90)
+        cancel_btn.setMinimumWidth(90)
+        cancel_btn.setFixedHeight(36)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Save")
+        save_btn = QPushButton("Save Changes")
         save_btn.setObjectName("primaryBtn")
-        save_btn.setFixedWidth(90)
+        save_btn.setMinimumWidth(110)
         save_btn.setFixedHeight(36)
         save_btn.clicked.connect(self.accept)
         btn_row.addWidget(save_btn)
@@ -181,8 +182,8 @@ def _divider() -> QWidget:
 
 def _row(label: QWidget, field) -> QHBoxLayout:
     h = QHBoxLayout()
-    h.setSpacing(12)
-    label.setFixedWidth(110)
+    h.setSpacing(16)
+    label.setFixedWidth(120)
     h.addWidget(label)
     if isinstance(field, QHBoxLayout):
         h.addLayout(field)
