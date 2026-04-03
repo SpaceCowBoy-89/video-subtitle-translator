@@ -1,8 +1,9 @@
-"""Language selector widgets for source and target languages."""
+"""Language selector with source → target arrow layout."""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from app.languages import DEEPL_SOURCE_LANGUAGES, DEEPL_TARGET_LANGUAGES
 
@@ -14,36 +15,62 @@ class LanguageSelector(QWidget):
 
     def _init_ui(self) -> None:
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        layout.addWidget(QLabel("Source Language:"))
+        # Source
+        src_col = QVBoxLayout()
+        src_col.setSpacing(5)
+        src_label = QLabel("SOURCE")
+        src_label.setProperty("class", "section-title")
+        src_col.addWidget(src_label)
+
         self.source_combo = QComboBox()
         self.source_combo.addItems(sorted(DEEPL_SOURCE_LANGUAGES.keys()))
         self.source_combo.setCurrentText("Auto-Detect")
-        layout.addWidget(self.source_combo)
+        src_col.addWidget(self.source_combo)
+        layout.addLayout(src_col)
 
-        layout.addWidget(QLabel("Target Language:"))
+        # Arrow
+        arrow = QLabel("→")
+        arrow.setAlignment(Qt.AlignCenter)
+        arrow.setFixedWidth(44)
+        arrow.setStyleSheet(
+            "color: #253152; font-size: 20px; font-weight: 300;"
+            "padding-top: 18px; background: transparent;"
+        )
+        layout.addWidget(arrow)
+
+        # Target
+        tgt_col = QVBoxLayout()
+        tgt_col.setSpacing(5)
+        tgt_label = QLabel("TARGET")
+        tgt_label.setProperty("class", "section-title")
+        tgt_col.addWidget(tgt_label)
+
         self.target_combo = QComboBox()
         self.target_combo.addItems(sorted(DEEPL_TARGET_LANGUAGES.keys()))
-        layout.addWidget(self.target_combo)
+        tgt_col.addWidget(self.target_combo)
+        layout.addLayout(tgt_col)
 
         layout.addStretch()
 
     def get_source_language(self) -> str:
-        """Get DeepL source language code."""
         return DEEPL_SOURCE_LANGUAGES[self.source_combo.currentText()]
 
     def get_target_language(self) -> str:
-        """Get DeepL target language code."""
         return DEEPL_TARGET_LANGUAGES[self.target_combo.currentText()]
 
     def set_source_language(self, display_name: str) -> None:
-        """Set source language by display name."""
         idx = self.source_combo.findText(display_name)
         if idx >= 0:
             self.source_combo.setCurrentIndex(idx)
 
     def set_target_language(self, display_name: str) -> None:
-        """Set target language by display name."""
         idx = self.target_combo.findText(display_name)
         if idx >= 0:
             self.target_combo.setCurrentIndex(idx)
+
+
+class _VBox(QWidget):
+    pass
