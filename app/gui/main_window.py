@@ -94,16 +94,6 @@ class MainWindow(QMainWindow):
         options_group = QGroupBox("Options")
         options_layout = QVBoxLayout(options_group)
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QWidget().parent().findChild(QWidget, "label") or QWidget())  # placeholder
-        self.subtitle_source_combo = QComboBox()
-        self.subtitle_source_combo.addItems(["Auto", "Whisper", "Embedded"])
-        row1.addWidget(QWidget())  # label placeholder
-        options_layout.addLayout(row1)
-
-        # Recreate options layout properly
-        options_layout = QVBoxLayout(options_group)
-
         sub_layout = QHBoxLayout()
         from PySide6.QtWidgets import QLabel
         sub_layout.addWidget(QLabel("Subtitle Source:"))
