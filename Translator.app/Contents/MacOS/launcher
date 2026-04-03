@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Get the app bundle directory
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_DIR="$(dirname "$APP_DIR")"
+
+# Launch the application
+cd "$PROJECT_DIR"
+if [ -d "venv" ]; then
+    source venv/bin/activate
+fi
+python main.py &
