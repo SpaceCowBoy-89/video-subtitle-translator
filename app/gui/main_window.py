@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStatusBar,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -226,15 +228,18 @@ class MainWindow(QMainWindow):
     def _make_main_pane(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(10)
 
-        # Toolbar row
+        # ── Step indicator ──
+        layout.addWidget(self._make_step_indicator())
+        layout.addSpacing(2)
+
+        # ── Toolbar row ──
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
 
-        count_label_text = "FILES"
-        self.file_count_label = QLabel(count_label_text)
+        self.file_count_label = QLabel("FILES")
         self.file_count_label.setStyleSheet(
             "color: #4b5870; font-size: 10px; font-weight: 700;"
             "letter-spacing: 0.8px; background: transparent;"
@@ -254,13 +259,117 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(toolbar)
 
-        # File list
+        # ── File list ──
         self.file_list = FileListWidget()
         self.file_list.model().rowsInserted.connect(self._update_file_count)
         self.file_list.model().rowsRemoved.connect(self._update_file_count)
+        self.file_list.file_selected.connect(self._on_file_selected)
         layout.addWidget(self.file_list, 1)
 
+        # ── Preview panel ──
+        self.preview_panel = _PreviewPanel()
+        layout.addWidget(self.preview_panel)
+
         return w
+
+    def _make_step_indicator(self) -> QWidget:
+        w = QWidget()
+        w.setFixedHeight(38)
+        w.setStyleSheet(
+            "background-color: #060a10;"
+            "border: 1px solid #111a28;"
+            "border-radius: 8px;"
+        )
+        h = QHBoxLayout(w)
+        h.setContentsMargins(18, 0, 18, 0)
+        h.setSpacing(0)
+
+        steps = ["Add Files", "Configure", "Translate"]
+        self._step_nodes  = []   # (node_label, text_label, track_line)
+        self._step_labels = []   # kept for _set_step signature compatibility
+
+        for i, label in enumerate(steps):
+            # ── track line before node (except first) ──
+            if i > 0:
+                track = QWidget()
+                track.setFixedSize(28, 1)
+                track.setObjectName(f"track_{i}")
+                track.setStyleSheet("background-color: #141e30;")
+                h.addWidget(track)
+            else:
+                track = None
+
+            # ── node dot ──
+            node = QLabel()
+            node.setFixedSize(20, 20)
+            node.setAlignment(Qt.AlignCenter)
+            node.setStyleSheet(
+                "background-color: #0d1520; color: #2a3f58;"
+                "border: 1.5px solid #1a2840; border-radius: 10px;"
+                "font-size: 9px; font-weight: 800; letter-spacing: 0px;"
+            )
+            node.setText(str(i + 1))
+            h.addWidget(node)
+            h.addSpacing(7)
+
+            # ── step label ──
+            lbl = QLabel(label.upper())
+            lbl.setStyleSheet(
+                "color: #1e2d45; font-size: 10px; font-weight: 700;"
+                "letter-spacing: 0.6px; background: transparent;"
+            )
+            h.addWidget(lbl)
+
+            self._step_nodes.append((node, lbl, track))
+            self._step_labels.append((node, lbl))  # for _set_step
+
+        h.addStretch()
+        self._set_step(1)
+        return w
+
+    def _set_step(self, active: int) -> None:
+        """Highlight the active step with a glowing node; mark completed steps with ✓."""
+        for i, (node, lbl, track) in enumerate(self._step_nodes):
+            step = i + 1
+            if step < active:           # ── completed ──
+                node.setText("✓")
+                node.setStyleSheet(
+                    "background-color: #071a10; color: #10b981;"
+                    "border: 1.5px solid #0d4030; border-radius: 10px;"
+                    "font-size: 9px; font-weight: 800;"
+                )
+                lbl.setStyleSheet(
+                    "color: #1a5040; font-size: 10px; font-weight: 700;"
+                    "letter-spacing: 0.6px; background: transparent;"
+                )
+                if track:
+                    track.setStyleSheet("background-color: #0d4030;")
+            elif step == active:        # ── active ──
+                node.setText(str(step))
+                node.setStyleSheet(
+                    "background-color: #042030; color: #38bdf8;"
+                    "border: 1.5px solid #0ea5e9; border-radius: 10px;"
+                    "font-size: 9px; font-weight: 800;"
+                )
+                lbl.setStyleSheet(
+                    "color: #7ec8e8; font-size: 10px; font-weight: 700;"
+                    "letter-spacing: 0.6px; background: transparent;"
+                )
+                if track:
+                    track.setStyleSheet("background-color: #0d4060;")
+            else:                       # ── future ──
+                node.setText(str(step))
+                node.setStyleSheet(
+                    "background-color: #0d1520; color: #1e2d45;"
+                    "border: 1.5px solid #141e30; border-radius: 10px;"
+                    "font-size: 9px; font-weight: 800;"
+                )
+                lbl.setStyleSheet(
+                    "color: #1a2535; font-size: 10px; font-weight: 700;"
+                    "letter-spacing: 0.6px; background: transparent;"
+                )
+                if track:
+                    track.setStyleSheet("background-color: #141e30;")
 
     def _make_footer(self) -> QWidget:
         w = QWidget()
@@ -302,8 +411,15 @@ class MainWindow(QMainWindow):
         n = self.file_list.count()
         if n == 0:
             self.file_count_label.setText("FILES")
+            self._set_step(1)
+            self.preview_panel.clear()
         else:
             self.file_count_label.setText(f"FILES  ·  {n}")
+            self._set_step(2)
+
+    def _on_file_selected(self, file_path: str) -> None:
+        if file_path:
+            self.preview_panel.load(file_path)
 
     def _remove_and_update(self) -> None:
         self.file_list.remove_selected()
@@ -390,6 +506,7 @@ class MainWindow(QMainWindow):
 
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
+        self._set_step(3)
         self._status("Processing…")
 
     def _cancel_processing(self) -> None:
@@ -428,6 +545,8 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.progress_panel.reset()
+        n = self.file_list.count()
+        self._set_step(2 if n > 0 else 1)
 
 
 # ── Utility widgets ──────────────────────────────────────────────────────────
@@ -449,7 +568,195 @@ def _field_label(text: str) -> QLabel:
     return lbl
 
 
-# ── Results dialog ───────────────────────────────────────────────────────────
+# ── Preview panel ────────────────────────────────────────────────────────────
+
+class _PreviewPanel(QWidget):
+    """Subtitle content preview — monospace readout with cyan timestamps."""
+
+    MAX_ENTRIES = 5
+    HEIGHT      = 152
+
+    # HTML template strings
+    _TS_STYLE   = "color:#0ea5e9;font-family:'Menlo','Courier New',monospace;font-size:11px;"
+    _TX_STYLE   = "color:#5a7898;font-family:'Menlo','Courier New',monospace;font-size:11px;"
+    _DIM_STYLE  = "color:#1e2d45;font-family:'Menlo','Courier New',monospace;font-size:11px;"
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(self.HEIGHT)
+        self._build()
+        self.clear()
+
+    def _build(self) -> None:
+        self.setStyleSheet(
+            "background-color: #060a10;"
+            "border: 1px solid #111828;"
+            "border-radius: 8px;"
+        )
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Top accent strip ──────────────────────────────────────────────
+        self._accent = QWidget()
+        self._accent.setFixedHeight(2)
+        self._accent.setStyleSheet("background-color: #0d1828; border-radius: 0px;")
+        root.addWidget(self._accent)
+
+        # ── Header row ────────────────────────────────────────────────────
+        header_w = QWidget()
+        header_w.setStyleSheet("background: transparent;")
+        header_h = QHBoxLayout(header_w)
+        header_h.setContentsMargins(14, 8, 14, 6)
+        header_h.setSpacing(8)
+
+        tag = QLabel("PREVIEW")
+        tag.setStyleSheet(
+            "color: #1e2d45; font-size: 9px; font-weight: 800;"
+            "letter-spacing: 1px; background: transparent;"
+        )
+        header_h.addWidget(tag)
+
+        self._title_lbl = QLabel("")
+        self._title_lbl.setStyleSheet(
+            "color: #2d4060; font-size: 11px; font-weight: 600; background: transparent;"
+        )
+        header_h.addWidget(self._title_lbl)
+        header_h.addStretch()
+
+        self._chip1 = _MetaChip("")
+        self._chip2 = _MetaChip("")
+        header_h.addWidget(self._chip1)
+        header_h.addWidget(self._chip2)
+
+        root.addWidget(header_w)
+
+        # ── Divider ───────────────────────────────────────────────────────
+        div = QWidget()
+        div.setFixedHeight(1)
+        div.setStyleSheet("background-color: #0d1828;")
+        root.addWidget(div)
+
+        # ── Content area ──────────────────────────────────────────────────
+        self._content = QTextEdit()
+        self._content.setReadOnly(True)
+        self._content.setFrameShape(QFrame.NoFrame)
+        self._content.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content.setStyleSheet(
+            "background: transparent; border: none; padding: 0px 4px;"
+        )
+        self._content.document().setDocumentMargin(10)
+        root.addWidget(self._content)
+
+    def clear(self) -> None:
+        self._accent.setStyleSheet("background-color: #0d1828;")
+        self._title_lbl.setText("")
+        self._chip1.setText("")
+        self._chip2.setText("")
+        self._content.setHtml(
+            f'<span style="{self._DIM_STYLE}">Select a file above to preview its contents</span>'
+        )
+
+    def load(self, file_path: str) -> None:
+        from pathlib import Path as _Path
+        p    = _Path(file_path)
+        ext  = p.suffix.lower()
+        size = p.stat().st_size if p.exists() else 0
+        size_str = f"{size // 1024} KB" if size < 1_048_576 else f"{size // 1_048_576} MB"
+
+        self._title_lbl.setText(p.name)
+        self._chip2.setText(size_str)
+
+        if ext in {".srt", ".vtt"}:
+            self._accent.setStyleSheet(
+                "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                "stop:0 #0ea5e9, stop:0.6 #0369a1, stop:1 #060a10);"
+            )
+            self._load_subtitle(file_path, ext)
+        elif ext in {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv"}:
+            self._accent.setStyleSheet(
+                "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                "stop:0 #7c3aed, stop:0.6 #4c1d95, stop:1 #060a10);"
+            )
+            self._chip1.setText("VIDEO")
+            self._content.setHtml(
+                f'<span style="{self._DIM_STYLE}">'
+                "Subtitles will be extracted during translation.<br>"
+                "Set <i>Subtitle Source</i> in the sidebar:<br>"
+                "<b style='color:#1e3050'>Whisper</b> — speech recognition from audio<br>"
+                "<b style='color:#1e3050'>Embedded</b> — extract existing subtitle track"
+                "</span>"
+            )
+        else:
+            self._accent.setStyleSheet("background-color: #141c2e;")
+            self._chip1.setText("")
+            self._content.setHtml(
+                f'<span style="{self._DIM_STYLE}">No preview for this file type.</span>'
+            )
+
+    def _load_subtitle(self, file_path: str, ext: str) -> None:
+        try:
+            if ext == ".srt":
+                from app.core.subtitle_parser import load_srt
+                entries = load_srt(file_path)
+            else:
+                from app.core.subtitle_parser import load_vtt
+                entries = load_vtt(file_path)
+
+            total = len(entries)
+            self._chip1.setText(f"{total} lines")
+
+            html_parts = []
+            for e in entries[:self.MAX_ENTRIES]:
+                ts_s = int(e.start.total_seconds())
+                h, m, s = ts_s // 3600, (ts_s % 3600) // 60, ts_s % 60
+                ts   = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+                text = e.text.strip().replace("\n", " ")
+                html_parts.append(
+                    f'<span style="{self._TS_STYLE}">{ts}</span>'
+                    f'<span style="color:#1c2840">  │  </span>'
+                    f'<span style="{self._TX_STYLE}">{text}</span>'
+                )
+
+            if total > self.MAX_ENTRIES:
+                more = total - self.MAX_ENTRIES
+                html_parts.append(
+                    f'<span style="{self._DIM_STYLE}">{'─' * 6}  '
+                    f'+{more} more entr{"ies" if more != 1 else "y"}  {'─' * 6}</span>'
+                )
+
+            self._content.setHtml("<br>".join(html_parts))
+
+        except Exception as ex:
+            self._chip1.setText("error")
+            self._content.setHtml(
+                f'<span style="{self._DIM_STYLE}">Could not parse: {ex}</span>'
+            )
+
+
+class _MetaChip(QLabel):
+    """Tiny pill-shaped metadata label."""
+
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self._refresh()
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self.setVisible(bool(text))
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self.setStyleSheet(
+            "background-color: #0d1828; color: #2d4060;"
+            "border: 1px solid #141e30; border-radius: 4px;"
+            "font-size: 10px; font-weight: 700; letter-spacing: 0.4px;"
+            "padding: 1px 7px;"
+        )
+
+
+# ── Results dialog ────────────────────────────────────────────────────────────
 
 class _ResultsDialog(QDialog):
     """Shows per-file outcomes with output paths and a Reveal in Finder button."""
